@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
     --ink:#182338;
@@ -242,7 +243,10 @@
     <div class="card">
       <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
         <span>This session's log <span class="count-pill" id="logCount">0</span></span>
-        <button class="btn secondary no-print" id="exportCsv" style="font-size:12.5px;padding:7px 14px;">Download CSV backup</button>
+        <span class="row no-print" style="margin:0;">
+          <button class="btn secondary" id="exportCsv" style="font-size:12.5px;padding:7px 14px;">Download CSV backup</button>
+          <button class="btn secondary" id="exportXlsx" style="font-size:12.5px;padding:7px 14px;">Download Excel (.xlsx)</button>
+        </span>
       </h2>
       <table class="log" id="logTable">
         <thead><tr><th>Name</th><th>Jawatan</th><th>Time</th></tr></thead>
@@ -358,12 +362,33 @@ function renderQrGrid(){
   });
 }
 
+// ---------- beep ----------
+let audioCtx = null;
+function beep(freq=880, duration=140){
+  try{
+    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.35, audioCtx.currentTime + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration/1000);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration/1000 + 0.02);
+  }catch(err){ console.error('Beep failed', err); }
+}
+
 // ---------- scan ----------
 const video = $('video');
 const canvas = $('canvas');
 const ctx = canvas.getContext('2d', {willReadFrequently:true});
 
 $('startCam').addEventListener('click', async ()=>{
+  if(!audioCtx){ try{ audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }catch(e){} }
   if(typeof jsQR === 'undefined'){
     $('scanIdle').style.display='block';
     $('scanIdle').textContent = 'QR scanning library failed to load — check your internet connection and reload the page.';
@@ -430,8 +455,8 @@ $('fileInput').addEventListener('change', (e)=>{
 
 function handleScan(text){
   let data;
-  try{ data = JSON.parse(text); }catch(e){ showTicket(null,'Unrecognised QR code.',true); return; }
-  if(!data.name){ showTicket(null,'Unrecognised QR code.',true); return; }
+  try{ data = JSON.parse(text); }catch(e){ beep(220,250); showTicket(null,'Unrecognised QR code.',true); return; }
+  if(!data.name){ beep(220,250); showTicket(null,'Unrecognised QR code.',true); return; }
 
   const now = new Date();
   const entry = {
@@ -443,12 +468,14 @@ function handleScan(text){
   };
 
   if(scannedIds.has(entry.id)){
+    beep(440, 200);
     showTicket(entry, 'Already recorded this session', true);
     return;
   }
   scannedIds.add(entry.id);
   scanLog.unshift(entry);
   postToSheet({session: sessionName || 'Untitled session', ...entry});
+  beep(1046, 130);
   showTicket(entry, 'Recorded', false);
   renderLog();
 }
@@ -467,11 +494,13 @@ function showTicket(entry, label, isDupe){
 function renderLog(){
   $('logCount').textContent = scanLog.length;
   $('exportCsv').disabled = scanLog.length === 0;
+  $('exportXlsx').disabled = scanLog.length === 0;
   $('logBody').innerHTML = scanLog.map(e=>
     `<tr><td>${escapeHtml(e.name)}</td><td>${escapeHtml(e.jawatan)}</td><td>${e.time}</td></tr>`
   ).join('');
 }
 $('exportCsv').disabled = true;
+$('exportXlsx').disabled = true;
 
 function csvEscape(v){
   const s = (v==null ? '' : String(v));
@@ -480,24 +509,50 @@ function csvEscape(v){
 
 $('exportCsv').addEventListener('click', ()=>{
   if(!scanLog.length){ return; }
+  const rows = buildExportRows();
+  const csvContent = rows.map(r => r.map(csvEscape).join(',')).join('\r\n');
+  const blob = new Blob(['\uFEFF' + csvContent], {type:'text/csv;charset=utf-8;'});
+  downloadBlob(blob, exportFilename('csv'));
+});
+
+$('exportXlsx').addEventListener('click', ()=>{
+  if(!scanLog.length || typeof XLSX === 'undefined'){
+    if(typeof XLSX === 'undefined') alert('Excel export library failed to load — check your internet connection and reload the page.');
+    return;
+  }
+  const rows = buildExportRows();
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{wch:22},{wch:22},{wch:22},{wch:12},{wch:12}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Attendance');
+  XLSX.writeFile(wb, exportFilename('xlsx'));
+});
+
+function buildExportRows(){
   const rows = [['Session','Name','Jawatan','Date','Time']];
   // scanLog is newest-first; export oldest-first so it reads top-to-bottom like a real register
   [...scanLog].reverse().forEach(e=>{
     rows.push([sessionName || 'Untitled session', e.name, e.jawatan, e.date, e.time]);
   });
-  const csvContent = rows.map(r => r.map(csvEscape).join(',')).join('\r\n');
-  const blob = new Blob(['\uFEFF' + csvContent], {type:'text/csv;charset=utf-8;'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
+  return rows;
+}
+
+function exportFilename(ext){
   const safeSession = (sessionName || 'session').replace(/[^a-z0-9]+/gi,'_').toLowerCase();
   const safeDate = (sessionDate || new Date().toLocaleDateString('en-GB')).replace(/[^a-z0-9]+/gi,'-');
+  return `attendance_${safeSession}_${safeDate}.${ext}`;
+}
+
+function downloadBlob(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
   a.href = url;
-  a.download = `attendance_${safeSession}_${safeDate}.csv`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-});
+}
 
 function escapeHtml(s){
   return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
