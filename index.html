@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <style>
   :root{
     --ink:#182338;
@@ -364,6 +364,11 @@ const canvas = $('canvas');
 const ctx = canvas.getContext('2d', {willReadFrequently:true});
 
 $('startCam').addEventListener('click', async ()=>{
+  if(typeof jsQR === 'undefined'){
+    $('scanIdle').style.display='block';
+    $('scanIdle').textContent = 'QR scanning library failed to load — check your internet connection and reload the page.';
+    return;
+  }
   try{
     stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
     video.srcObject = stream;
