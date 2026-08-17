@@ -67,6 +67,7 @@
   input:focus, textarea:focus, select:focus{outline:2px solid var(--brass-soft);outline-offset:1px;border-color:var(--brass-soft);}
   textarea{resize:vertical;min-height:110px;line-height:1.6;}
   .hint{font-size:12px;color:var(--ink-soft);margin-top:5px;line-height:1.5;}
+  .page-footer{font-size:11px;color:var(--ink-soft);opacity:.65;text-align:center;margin:28px 0 8px;letter-spacing:.01em;}
 
   button.btn{
     font-family:'IBM Plex Sans',sans-serif;font-weight:600;font-size:14px;
@@ -152,7 +153,7 @@
 
   @media print{
     body{background:#fff;}
-    header.top, nav.tabs, .card:not(.print-area), .no-print{display:none !important;}
+    header.top, nav.tabs, .card:not(.print-area), .no-print, .page-footer{display:none !important;}
     .qr-grid{grid-template-columns:repeat(3,1fr);}
     .qr-card{break-inside:avoid;border:1px solid #999;border-style:dashed;}
   }
@@ -180,17 +181,6 @@
 
   <!-- ================= SETUP ================= -->
   <section class="panel active" id="panel-setup">
-    <div class="card">
-      <h2>Meeting / workshop details</h2>
-      <label>Session name (this goes into the Sheet with every scan)</label>
-      <input type="text" id="sessionName" placeholder="e.g. Mesyuarat Bulanan Jun 2026">
-      <label>Date</label>
-      <input type="text" id="sessionDate" placeholder="auto-filled with today's date">
-      <div class="row">
-        <button class="btn" id="saveSession">Save session</button>
-      </div>
-    </div>
-
     <div class="card">
       <h2>Connect your Google Sheet</h2>
       <p class="hint">Scans are sent to your own Google Sheet through a small Google Apps Script "Web App" — free, no server needed, stays entirely in your Google account.</p>
@@ -223,7 +213,7 @@
   var sheet = ss.getSheetByName('Attendance');
   if (!sheet) {
     sheet = ss.insertSheet('Attendance');
-    sheet.appendRow(['Session', 'Name', 'Jawatan', 'Date', 'Time']);
+    sheet.appendRow(['Session', 'Name', 'Designation', 'Date', 'Time']);
   }
   sheet.appendRow([data.session, data.name, data.jawatan, data.date, data.time]);
   return ContentService.createTextOutput(JSON.stringify({status: 'ok'}))
@@ -232,14 +222,15 @@
         <p class="hint">Note: because Apps Script doesn't send back normal CORS headers, this app fires requests "blind" (it can't read a confirmation back). Use "Send test row" above to confirm it's wired up correctly.</p>
       </details>
     </div>
+    <p class="page-footer">© 2026 [Design by Daniel Liew lcyien9828@gmail.com]. All Rights Reserved.</p>
   </section>
 
   <!-- ================= GENERATE ================= -->
   <section class="panel" id="panel-generate">
     <div class="card">
       <h2>Add your staff list</h2>
-      <p class="hint">One person per line, format: <b>Name, Jawatan only</b></p>
-      <textarea id="bulkInput" placeholder="Ahmad bin Ismail, Guru Besar&#10;Siti Aminah, Penolong Kanan&#10;Rajesh Kumar, Guru Disiplin"></textarea>
+      <p class="hint">One person per line, format: <b>Name, designation only</b></p>
+      <textarea id="bulkInput" placeholder="Ahmad bin Ismail, Principal&#10;Siti Aminah, Deputy Principal&#10;Rajesh Kumar, Discipline Teacher"></textarea>
       <div class="row">
         <button class="btn" id="genBtn">Generate QR codes</button>
         <button class="btn secondary" id="clearBtn">Clear all</button>
@@ -252,10 +243,22 @@
       <p class="hint no-print">Give each person their card, or print and cut them out. This same list also powers the "Expected" count and manual search fallback in the Scan tab.</p>
       <div class="qr-grid" id="qrGrid"></div>
     </div>
+    <p class="page-footer">© 2026 [Design by Daniel Liew lcyien9828@gmail.com]. All Rights Reserved.</p>
   </section>
 
   <!-- ================= SCAN ================= -->
   <section class="panel" id="panel-scan">
+    <div class="card">
+      <h2>Meeting / workshop details</h2>
+      <label>Session name (this goes into the Sheet with every scan)</label>
+      <input type="text" id="sessionName" placeholder="e.g. Monthly Meeting — June 2026">
+      <label>Date</label>
+      <input type="text" id="sessionDate" placeholder="auto-filled with today's date">
+      <div class="row">
+        <button class="btn" id="saveSession">Save session</button>
+      </div>
+    </div>
+
     <div class="card">
       <h2>Live scanner</h2>
       <p class="hint">Point the camera at an attendee's QR card. Each person is logged once per session automatically.</p>
@@ -303,10 +306,11 @@
         </span>
       </h2>
       <table class="log" id="logTable">
-        <thead><tr><th>Name</th><th>Jawatan</th><th>Time</th></tr></thead>
+        <thead><tr><th>Name</th><th>Designation</th><th>Time</th></tr></thead>
         <tbody id="logBody"></tbody>
       </table>
     </div>
+    <p class="page-footer">© 2026 [Design by Daniel Liew lcyien9828@gmail.com]. All Rights Reserved.</p>
   </section>
 
 </div>
@@ -359,7 +363,7 @@ $('saveUrl').addEventListener('click', ()=>{
 $('testUrl').addEventListener('click', async ()=>{
   sheetUrl = $('sheetUrl').value.trim();
   if(!sheetUrl){ $('urlStatus').textContent = 'Paste a Web App URL first.'; return; }
-  await postToSheet({session:'TEST', name:'Test Person', jawatan:'Test Jawatan', date:sessionDate||todayDate.toLocaleDateString('en-GB'), time:todayDate.toLocaleTimeString()});
+  await postToSheet({session:'TEST', name:'Test Person', jawatan:'Test Designation', date:sessionDate||todayDate.toLocaleDateString('en-GB'), time:todayDate.toLocaleTimeString()});
   $('urlStatus').textContent = 'Test row sent — check your Google Sheet to confirm it arrived.';
 });
 
@@ -800,7 +804,7 @@ $('exportXlsx').addEventListener('click', ()=>{
 });
 
 function buildExportRows(){
-  const rows = [['Session','Name','Jawatan','Date','Time']];
+  const rows = [['Session','Name','Designation','Date','Time']];
   [...scanLog].reverse().forEach(e=>{
     rows.push([sessionName || 'Untitled session', e.name, e.jawatan, e.date, e.time]);
   });
